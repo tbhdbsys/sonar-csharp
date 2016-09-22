@@ -10,5 +10,10 @@ function installTravisTools {
 
 installTravisTools
 
-regular_mvn_build_deploy_analyze
+#change analyzer version if available as an environment variable
+if [ -n "${ANALYZER_VERSION:-}" ]; then
+	echo sonarAnalyzer.version: $ANALYZER_VERSION
+	sed -i -E "s/<sonarAnalyzer.version>[^<]*</<sonarAnalyzer.version>$ANALYZER_VERSION</g" pom.xml 
+fi
 
+regular_mvn_build_deploy_analyze
