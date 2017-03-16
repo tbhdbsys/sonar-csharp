@@ -18,10 +18,13 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 using SonarAnalyzer.Common;
 using SonarAnalyzer.Helpers;
 
@@ -66,6 +69,51 @@ namespace SonarAnalyzer.Rules.CSharp
                     }
                 },
                 SyntaxKind.ObjectCreationExpression);
+
+            context.RegisterSyntaxNodeActionInNonGenerated(
+                c =>
+                {
+                    var expression = (ParenthesizedExpressionSyntax)c.Node;
+
+                    if (!(expression.Parent is ParenthesizedExpressionSyntax) &&
+                        (expression.Expression is ParenthesizedExpressionSyntax))
+                    {
+                        var innermostExpression = GetSelfAndDescendantParenthesizedExpressions(expression)
+                            .Reverse()
+                            .Skip(1)
+                            .First(); // There are always at least two parenthesized expressions
+
+                        var location = GetLocation(expression.SyntaxTree,
+                            expression.OpenParenToken.GetLocation(),
+                            innermostExpression.OpenParenToken.GetLocation());
+
+                        var secondaryLocation = GetLocation(expression.SyntaxTree,
+                            innermostExpression.CloseParenToken.GetLocation(),
+                            expression.CloseParenToken.GetLocation());
+
+                        c.ReportDiagnostic(Diagnostic.Create(Rule, location, additionalLocations: new[] { secondaryLocation }));
+                    }
+                },
+                SyntaxKind.ParenthesizedExpression);
+        }
+
+        private static Location GetLocation(SyntaxTree syntaxTree, Location firstLocation, Location secondLocation)
+        {
+            var textSpan = TextSpan.FromBounds(
+                firstLocation.SourceSpan.Start, 
+                secondLocation.SourceSpan.End);
+
+            return Location.Create(syntaxTree, textSpan);
+        }
+
+        private IEnumerable<ParenthesizedExpressionSyntax> GetSelfAndDescendantParenthesizedExpressions(ParenthesizedExpressionSyntax expression)
+        {
+            var descendant = expression;
+            while (descendant != null)
+            {
+                yield return descendant;
+                descendant = descendant.Expression as ParenthesizedExpressionSyntax;
+            }
         }
     }
 }
